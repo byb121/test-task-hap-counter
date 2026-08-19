@@ -5,7 +5,7 @@ import csv
 import click
 import pysam
 
-from hap_counter.counting import COUNT_FIELDS, count_haplotype_support
+from hap_counter.counting import COUNT_FIELDS, count_haplotype_support_batches
 from hap_counter.vcf_io import read_biallelic_snvs
 
 
@@ -44,8 +44,7 @@ def main(bam: str, vcf: str, output: str) -> None:
         writer = csv.writer(out_file, delimiter="\t")
         writer.writerow(fieldnames)
 
-        for site in read_biallelic_snvs(vcf):
-            counts = count_haplotype_support(bam_file, site.chrom, site.pos, site.ref, site.alt)
+        for site, counts in count_haplotype_support_batches(bam_file, read_biallelic_snvs(vcf)):
             writer.writerow(
                 [site.chrom, site.pos, site.ref, site.alt]
                 + [counts[field] for field in COUNT_FIELDS]

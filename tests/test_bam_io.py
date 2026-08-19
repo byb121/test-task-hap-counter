@@ -1,7 +1,8 @@
 import pysam
 import pytest
 
-from hap_counter.bam_io import classify_allele, fetch_primary_pileup_reads, get_haplotype
+from hap_counter.bam_io import (classify_allele,
+        fetch_primary_pileup_reads_for_positions, get_haplotype)
 
 CHROM = "chr1"
 VARIANT_POS = 10  # 1-based; 0-based reference position is 9
@@ -30,25 +31,28 @@ def synthetic_bam(tmp_path):
         {"HD": {"VN": "1.6", "SO": "coordinate"}, "SQ": [{"SN": CHROM, "LN": 1000}]}
     )
 
+    # Reads deliberately vary in length (5-20bp) and reference_start so pileup
+    # logic is exercised against reads that reach the variant position from
+    # different offsets, not just uniform 6bp reads starting at the variant.
     reads = [
-        # HP=1 supporting ALT
-        _make_read(header, "h1_alt", 0, 9, "6M", "AAAAAA", hp=1),
-        # HP=1 supporting REF
+        # HP=1 supporting ALT (length 11, starts 7bp before the variant)
+        _make_read(header, "h1_alt", 0, 2, "11M", "A" * 11, hp=1),
+        # HP=1 supporting REF (length 6, starts at the variant)
         _make_read(header, "h1_ref", 0, 9, "6M", "GAAAAA", hp=1),
-        # HP=2 supporting ALT
-        _make_read(header, "h2_alt", 0, 9, "6M", "AAAAAA", hp=2),
-        # HP=2 with a third allele (neither REF nor ALT)
-        _make_read(header, "h2_other", 0, 9, "6M", "TAAAAA", hp=2),
-        # No HP tag at all
-        _make_read(header, "untagged", 0, 9, "6M", "AAAAAA", hp=None),
-        # Deletion spanning the variant position
-        _make_read(header, "deletion", 0, 8, "1M1D4M", "AAAAA", hp=1),
+        # HP=2 supporting ALT (length 20, starts 9bp before the variant)
+        _make_read(header, "h2_alt", 0, 0, "20M", "A" * 20, hp=2),
+        # HP=2 with a third allele (neither REF nor ALT); length 9
+        _make_read(header, "h2_other", 0, 5, "9M", "AAAATAAAA", hp=2),
+        # No HP tag at all; length 16
+        _make_read(header, "untagged", 0, 1, "16M", "A" * 16, hp=None),
+        # Deletion spanning the variant position; length 7
+        _make_read(header, "deletion", 0, 7, "2M1D5M", "A" * 7, hp=1),
         # Secondary alignment - must be excluded even though it looks like ALT support
-        _make_read(header, "secondary", 0x100, 9, "6M", "AAAAAA", hp=1),
-        # Supplementary alignment - must be excluded
-        _make_read(header, "supplementary", 0x800, 9, "6M", "AAAAAA", hp=1),
-        # QC-failed alignment - must be excluded
-        _make_read(header, "qcfail", 0x200, 9, "6M", "AAAAAA", hp=1),
+        _make_read(header, "secondary", 0x100, 6, "5M", "A" * 5, hp=1),
+        # Supplementary alignment - must be excluded; length 18
+        _make_read(header, "supplementary", 0x800, 3, "18M", "A" * 18, hp=1),
+        # QC-failed alignment - must be excluded; length 8
+        _make_read(header, "qcfail", 0x200, 4, "8M", "A" * 8, hp=1),
     ]
 
     unsorted_path = tmp_path / "unsorted.bam"
@@ -64,16 +68,23 @@ def synthetic_bam(tmp_path):
         yield bam
 
 
-def test_fetch_primary_pileup_reads_excludes_non_primary(synthetic_bam):
-    reads = fetch_primary_pileup_reads(synthetic_bam, CHROM, VARIANT_POS)
-    names = {pr.alignment.query_name for pr in reads}
+def test_fetch_primary_pileup_reads_for_positions_excludes_non_primary(synthetic_bam):
+    result = fetch_primary_pileup_reads_for_positions(synthetic_bam, CHROM, [VARIANT_POS])
+    names = {pr.alignment.query_name for pr in result[VARIANT_POS]}
     assert names == {"h1_alt", "h1_ref", "h2_alt", "h2_other", "untagged", "deletion"}
+
+
+def test_fetch_primary_pileup_reads_for_positions_omits_uncovered_positions(synthetic_bam):
+    result = fetch_primary_pileup_reads_for_positions(synthetic_bam, CHROM, [VARIANT_POS, 999])
+    assert 999 not in result
 
 
 def test_classify_allele_and_get_haplotype(synthetic_bam):
     reads = {
         pr.alignment.query_name: pr
-        for pr in fetch_primary_pileup_reads(synthetic_bam, CHROM, VARIANT_POS)
+        for pr in fetch_primary_pileup_reads_for_positions(synthetic_bam, CHROM, [VARIANT_POS])[
+            VARIANT_POS
+        ]
     }
 
     assert classify_allele(reads["h1_alt"], REF, ALT) == "ALT"

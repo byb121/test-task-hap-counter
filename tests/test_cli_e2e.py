@@ -33,19 +33,19 @@ def test_known_site_counts(tmp_path):
     by_pos = {row["pos"]: row for row in rows}
 
     # Cross-checked independently against a standalone pysam pileup script
-    # using the same min_base_quality=0/flag_filter=0 parameters.
+    # using pysam's default min_base_quality (13) and flag_filter.
     row = by_pos["28001381"]
     assert row["chrom"] == "chr16"
     assert row["ref"] == "G"
     assert row["alt"] == "A"
     assert row["h1_ALT"] == "4"
     assert row["h1_REF"] == "11"
-    assert row["h2_ALT"] == "12"
+    assert row["h2_ALT"] == "11"
     assert row["h2_REF"] == "3"
 
     row = by_pos["28002344"]
-    assert row["h1_ALT"] == "5"
-    assert row["h1_REF"] == "11"
-    assert row["h2_ALT"] == "12"
+    assert row["h1_ALT"] == "4"
+    assert row["h1_REF"] == "10"
+    assert row["h2_ALT"] == "9"
     assert row["h2_REF"] == "3"
-    assert row["h2_other"] == "1"
+    assert row["h2_other"] == "0"

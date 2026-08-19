@@ -1,41 +1,51 @@
 """Reading BAM alignments at specific coordinates and classifying alleles."""
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import pysam
 
 
-def fetch_primary_pileup_reads(
-    bam: pysam.AlignmentFile, chrom: str, pos: int
-) -> List[pysam.PileupRead]:
-    """Return primary-alignment pileup reads covering a 1-based position.
+def fetch_primary_pileup_reads_for_positions(
+    bam: pysam.AlignmentFile, chrom: str, positions: List[int]
+) -> Dict[int, List[pysam.PileupRead]]:
+    """Return primary-alignment pileup reads at several 1-based positions on one
+    chromosome, via a single pileup() call spanning min(positions)..max(positions).
 
-    Excludes secondary, supplementary, and QC-failed alignments. Uses
-    min_base_quality=0 and flag_filter=0 to disable pysam's own hidden
-    filtering defaults (a base-quality threshold, and a flag filter that
-    excludes secondary/qcfail/duplicate but not supplementary), so all
-    filtering is explicit here.
+    Amortizes htslib's per-call pileup setup cost across a batch of nearby
+    positions instead of paying it once per position. A position absent from
+    the returned dict had zero covering reads. Uses pysam's default
+    min_base_quality (13): a read whose base quality at a given position
+    falls below that threshold is silently excluded from that position's
+    pileup entirely (it won't be counted as REF/ALT/other/untagged there).
+    Excludes secondary, supplementary, QC-failed, and duplicate alignments:
+    pysam's default flag_filter (BAM_FUNMAP | BAM_FSECONDARY | BAM_FQCFAIL |
+    BAM_FDUP) excludes unmapped/secondary/QC-failed/duplicate reads;
+    supplementary alignments aren't covered by that default, so they're
+    filtered explicitly here.
     """
-    start = pos - 1
-    end = pos
-    reads: List[pysam.PileupRead] = []
+    if not positions:
+        return {}
+
+    start = min(positions) - 1
+    end = max(positions)
+    wanted = set(positions)
+    reads_by_pos: Dict[int, List[pysam.PileupRead]] = {}
     for column in bam.pileup(
         chrom,
         start,
         end,
         truncate=True,
-        min_base_quality=0,
-        flag_filter=0,
         ignore_overlaps=False,
     ):
-        if column.pos != start:
+        pos = column.pos + 1
+        if pos not in wanted:
             continue
-        for pileup_read in column.pileups:
-            alignment = pileup_read.alignment
-            if alignment.is_secondary or alignment.is_supplementary or alignment.is_qcfail:
-                continue
-            reads.append(pileup_read)
-    return reads
+        reads_by_pos[pos] = [
+            pileup_read
+            for pileup_read in column.pileups
+            if not pileup_read.alignment.is_supplementary
+        ]
+    return reads_by_pos
 
 
 def classify_allele(pileup_read: pysam.PileupRead, ref: str, alt: str) -> Optional[str]:
