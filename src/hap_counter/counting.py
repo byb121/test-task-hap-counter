@@ -27,6 +27,35 @@ COUNT_FIELDS = (
 # genomic span/read buffer stays predictable on real, sparser VCFs.
 DEFAULT_BATCH_SIZE = 150
 
+DEFAULT_MIN_HAPLOTAGGED_READS = 10
+DEFAULT_GENOTYPE_ALLELE_FRACTION = 0.8
+
+
+def call_bam_genotype(
+    counts: Dict[str, int], min_reads: int, allele_fraction_threshold: float
+) -> str:
+    """Call a per-haplotype BAM-based genotype from a site's REF/ALT counts.
+
+    For each haplotype, considers only its REF+ALT reads (not "other"). If
+    that total is below min_reads, or no allele reaches
+    allele_fraction_threshold of it, the haplotype's call is "." (no call).
+    Otherwise the call is "0" (REF) or "1" (ALT). Returns "H1|H2".
+    """
+    calls = []
+    for haplotype in (1, 2):
+        ref = counts[f"h{haplotype}_REF"]
+        alt = counts[f"h{haplotype}_ALT"]
+        total = ref + alt
+        if total == 0 or total < min_reads:
+            calls.append(".")
+        elif ref / total >= allele_fraction_threshold:
+            calls.append("0")
+        elif alt / total >= allele_fraction_threshold:
+            calls.append("1")
+        else:
+            calls.append(".")
+    return "|".join(calls)
+
 
 def _count_from_reads(reads, ref: str, alt: str) -> Dict[str, int]:
     counts = {field: 0 for field in COUNT_FIELDS}

@@ -6,6 +6,7 @@ requires-python = ">=3.9"
 dependencies = [
     "pysam>=0.22",
     "click>=8.1",
+    "matplotlib>=3.7",
 ]
 
 [project.scripts]

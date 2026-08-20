@@ -66,6 +66,20 @@ def classify_allele(pileup_read: pysam.PileupRead, ref: str, alt: str) -> Option
     return None
 
 
+def get_bam_sample_names(header: dict) -> List[str]:
+    """Return distinct sample names (@RG SM tags) from a BAM header dict, in order.
+
+    Returns an empty list if there are no @RG lines, or none of them carry an
+    SM tag.
+    """
+    seen: List[str] = []
+    for read_group in header.get("RG", []):
+        sample_name = read_group.get("SM")
+        if sample_name is not None and sample_name not in seen:
+            seen.append(sample_name)
+    return seen
+
+
 def get_haplotype(pileup_read: pysam.PileupRead) -> Optional[int]:
     """Return 1 or 2 if the read has a valid HP tag, else None."""
     alignment = pileup_read.alignment

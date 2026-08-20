@@ -1,7 +1,11 @@
 import pysam
 import pytest
 
-from hap_counter.counting import count_haplotype_support_batches, _chunk_sites_by_chrom
+from hap_counter.counting import (
+    call_bam_genotype,
+    count_haplotype_support_batches,
+    _chunk_sites_by_chrom,
+)
 from hap_counter.vcf_io import SnvSite
 
 CHROM = "chr1"
@@ -55,8 +59,8 @@ def two_site_bam(tmp_path):
 
 def test_count_haplotype_support_batches_gives_expected_counts(two_site_bam):
     sites = [
-        SnvSite(CHROM, POS1, "G", "A"),
-        SnvSite(CHROM, POS2, "C", "T"),
+        SnvSite(CHROM, POS1, "G", "A", "1|0"),
+        SnvSite(CHROM, POS2, "C", "T", "1|0"),
     ]
 
     batched_results = dict(count_haplotype_support_batches(two_site_bam, sites, batch_size=10))
@@ -83,10 +87,10 @@ def test_count_haplotype_support_batches_gives_expected_counts(two_site_bam):
 
 def test_chunk_sites_by_chrom_splits_on_chrom_change():
     sites = [
-        SnvSite("chr1", 1, "A", "G"),
-        SnvSite("chr1", 2, "A", "G"),
-        SnvSite("chr2", 3, "A", "G"),
-        SnvSite("chr2", 4, "A", "G"),
+        SnvSite("chr1", 1, "A", "G", "1|0"),
+        SnvSite("chr1", 2, "A", "G", "1|0"),
+        SnvSite("chr2", 3, "A", "G", "1|0"),
+        SnvSite("chr2", 4, "A", "G", "1|0"),
     ]
 
     batches = list(_chunk_sites_by_chrom(sites, batch_size=10))
@@ -96,8 +100,48 @@ def test_chunk_sites_by_chrom_splits_on_chrom_change():
 
 
 def test_chunk_sites_by_chrom_splits_on_batch_size():
-    sites = [SnvSite("chr1", i, "A", "G") for i in range(1, 6)]
+    sites = [SnvSite("chr1", i, "A", "G", "1|0") for i in range(1, 6)]
 
     batches = list(_chunk_sites_by_chrom(sites, batch_size=2))
 
     assert [len(batch) for batch in batches] == [2, 2, 1]
+
+
+# --- call_bam_genotype ---
+
+
+def _counts(h1_ref, h1_alt, h2_ref, h2_alt):
+    return {
+        "h1_REF": h1_ref,
+        "h1_ALT": h1_alt,
+        "h2_REF": h2_ref,
+        "h2_ALT": h2_alt,
+        "h1_other": 0,
+        "h2_other": 0,
+        "n_untagged": 0,
+    }
+
+
+def test_call_bam_genotype_clear_majority_both_haplotypes():
+    counts = _counts(h1_ref=9, h1_alt=1, h2_ref=1, h2_alt=9)
+    assert call_bam_genotype(counts, min_reads=10, allele_fraction_threshold=0.8) == "0|1"
+
+
+def test_call_bam_genotype_no_call_when_below_min_reads():
+    counts = _counts(h1_ref=4, h1_alt=1, h2_ref=1, h2_alt=9)
+    assert call_bam_genotype(counts, min_reads=10, allele_fraction_threshold=0.8) == ".|1"
+
+
+def test_call_bam_genotype_no_call_when_ambiguous():
+    counts = _counts(h1_ref=6, h1_alt=4, h2_ref=1, h2_alt=9)
+    assert call_bam_genotype(counts, min_reads=10, allele_fraction_threshold=0.8) == ".|1"
+
+
+def test_call_bam_genotype_exact_threshold_boundary_counts_as_a_call():
+    counts = _counts(h1_ref=8, h1_alt=2, h2_ref=1, h2_alt=9)
+    assert call_bam_genotype(counts, min_reads=10, allele_fraction_threshold=0.8) == "0|1"
+
+
+def test_call_bam_genotype_zero_reads_no_call_even_with_zero_min_reads():
+    counts = _counts(h1_ref=0, h1_alt=0, h2_ref=1, h2_alt=9)
+    assert call_bam_genotype(counts, min_reads=0, allele_fraction_threshold=0.8) == ".|1"

@@ -2,7 +2,7 @@ import pysam
 import pytest
 
 from hap_counter.bam_io import (classify_allele,
-        fetch_primary_pileup_reads_for_positions, get_haplotype)
+        fetch_primary_pileup_reads_for_positions, get_bam_sample_names, get_haplotype)
 
 CHROM = "chr1"
 VARIANT_POS = 10  # 1-based; 0-based reference position is 9
@@ -102,3 +102,31 @@ def test_classify_allele_and_get_haplotype(synthetic_bam):
     assert get_haplotype(reads["untagged"]) is None
 
     assert classify_allele(reads["deletion"], REF, ALT) is None
+
+
+# --- get_bam_sample_names ---
+
+
+def test_get_bam_sample_names_single_rg():
+    header = {"RG": [{"ID": "rg1", "SM": "sampleA"}]}
+    assert get_bam_sample_names(header) == ["sampleA"]
+
+
+def test_get_bam_sample_names_dedups_same_sample_across_rgs():
+    header = {"RG": [{"ID": "rg1", "SM": "sampleA"}, {"ID": "rg2", "SM": "sampleA"}]}
+    assert get_bam_sample_names(header) == ["sampleA"]
+
+
+def test_get_bam_sample_names_multiple_distinct_samples():
+    header = {"RG": [{"ID": "rg1", "SM": "sampleA"}, {"ID": "rg2", "SM": "sampleB"}]}
+    assert get_bam_sample_names(header) == ["sampleA", "sampleB"]
+
+
+def test_get_bam_sample_names_no_rg_at_all():
+    header = {"HD": {"VN": "1.6"}}
+    assert get_bam_sample_names(header) == []
+
+
+def test_get_bam_sample_names_rg_without_sm():
+    header = {"RG": [{"ID": "rg1"}]}
+    assert get_bam_sample_names(header) == []
