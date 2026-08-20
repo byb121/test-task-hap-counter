@@ -1,0 +1,23 @@
+[project]
+name = "hap-counter"
+version = "0.1.0"
+description = "Compute per-haplotype REF/ALT support at biallelic SNV sites from a haplotagged BAM and a VCF."
+requires-python = ">=3.9"
+dependencies = [
+    "pysam>=0.22",
+    "click>=8.1",
+    "matplotlib>=3.7",
+]
+
+[project.scripts]
+hap-counter = "hap_counter.cli:main"
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hap_counter"]
